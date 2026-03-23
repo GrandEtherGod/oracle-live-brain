@@ -1,0 +1,220 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --accent: #58a6ff;
+  --accent-glow: rgba(88, 166, 255, 0.25);
+  --success: #3fb950;
+  --warning: #d29922;
+  --error: #f85149;
+  --voice-active: #3fb950;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-logo {
+  width: 28px;
+  height: 28px;
+  background: linear-gradient(135deg, var(--accent), #a371f7);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+
+.brand-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.brand-sub {
+  font-size: 12px;
+  color: #8b949e;
+}
+
+/* Voice controls */
+.voice-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #8b949e;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #8b949e;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+
+.status-dot.listening {
+  background: var(--voice-active);
+  box-shadow: 0 0 8px var(--voice-active);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.status-dot.processing {
+  background: var(--warning);
+  box-shadow: 0 0 8px var(--warning);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.btn-mic {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 18px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-mic:hover {
+  border-color: var(--accent);
+  background: var(--accent-glow);
+}
+
+.btn-mic.active {
+  border-color: var(--voice-active);
+  background: rgba(63, 185, 80, 0.15);
+  box-shadow: 0 0 12px rgba(63, 185, 80, 0.3);
+}
+
+.btn-mic:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Transcript bar */
+#transcript-bar {
+  padding: 8px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: #8b949e;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+#transcript-bar.has-text {
+  color: var(--text);
+}
+
+#transcript-bar .label {
+  color: var(--accent);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+#transcript-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Terminal */
+#terminal-container {
+  flex: 1;
+  overflow: hidden;
+  padding: 4px;
+  background: #000;
+}
+
+.xterm {
+  height: 100%;
+}
+
+/* AI response overlay */
+#ai-response-bar {
+  padding: 8px 20px;
+  background: rgba(88, 166, 255, 0.08);
+  border-top: 1px solid rgba(88, 166, 255, 0.2);
+  font-size: 13px;
+  color: var(--accent);
+  min-height: 34px;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+#ai-response-bar.visible {
+  display: flex;
+}
+
+#ai-response-bar .label {
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+/* Connection banner */
+#connection-banner {
+  padding: 6px 20px;
+  background: rgba(248, 81, 73, 0.1);
+  border-top: 1px solid rgba(248, 81, 73, 0.3);
+  font-size: 12px;
+  color: var(--error);
+  text-align: center;
+  display: none;
+  flex-shrink: 0;
+}
+
+#connection-banner.visible {
+  display: block;
+}
