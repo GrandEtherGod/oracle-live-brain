@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AetherLink Voice Terminal</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- xterm.js from CDN -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="brand-logo">⚡</div>
+      <div>
+        <div class="brand-name">AetherLink</div>
+        <div class="brand-sub">Voice Terminal</div>
+      </div>
+    </div>
+    <div class="voice-controls">
+      <div class="status-indicator">
+        <div class="status-dot" id="status-dot"></div>
+        <span id="status-text">Ready</span>
+      </div>
+      <button class="btn-mic" id="btn-mic" title="Toggle voice input (Space)">🎤</button>
+    </div>
+  </header>
+
+  <div id="transcript-bar">
+    <span class="label" id="transcript-label" style="display:none">You said:</span>
+    <span id="transcript-text">Speak a command or press Space to start listening…</span>
+  </div>
+
+  <div id="terminal-container"></div>
+
+  <div id="ai-response-bar">
+    <span class="label">AetherLink:</span>
+    <span id="ai-response-text"></span>
+  </div>
+
+  <div id="connection-banner">Disconnected — reconnecting…</div>
+
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
