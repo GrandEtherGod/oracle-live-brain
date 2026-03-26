@@ -66,6 +66,48 @@ The live voice terminal — a full-stack feature:
 
 ---
 
+---
+
+## OpenClaw Agents (`packages/openclaw/`)
+
+OpenClaw is the Python pip-installable agent layer for AetherLinkOS. It exposes the same Claude tool-use architecture as the TypeScript voice terminal, but as a standalone Python package usable by external tooling, scripts, and CI pipelines.
+
+```
+packages/openclaw/
+├── pyproject.toml          # pip package config  (pip install openclaw-agents)
+├── openclaw/
+│   ├── agent.py            # OpenClawAgent — base class (Claude tool-use loop)
+│   ├── tools.py            # Tool, ToolRegistry, @tool decorator
+│   ├── cli.py              # `openclaw` CLI  (run / chat / list-agents)
+│   └── agents/
+│       ├── terminal.py     # TerminalAgent  — run_command + speak tools
+│       └── theia.py        # TheiaAgent     — theia_open_file / run_task / workspace_info
+└── tests/                  # pytest unit tests (no API key required)
+```
+
+**Install**: `pip install openclaw-agents`
+**CLI**: `openclaw run "list my files"` / `openclaw chat --agent theia`
+
+### Agent architecture
+
+```
+User prompt
+    │
+    ▼
+OpenClawAgent.run()
+    │  appends to conversation history
+    ▼
+anthropic.Anthropic.messages.create()   ← Claude API (tool_use loop)
+    │
+    ▼
+ToolRegistry.execute(tool_name, inputs) ← Python handler
+    │
+    ▼
+result dict  {tool: str, result: Any}
+```
+
+---
+
 ## Key Design Decisions
 
 | Decision | Rationale |
@@ -75,6 +117,7 @@ The live voice terminal — a full-stack feature:
 | Web Speech API (no third-party STT) | Zero cost, no extra dependencies; works in Chromium |
 | Eclipse Theia (not VS Code directly) | Embeddable, open-source, supports both browser and desktop |
 | TypeScript throughout | Type safety across the entire stack |
+| Python for OpenClaw pip package | Enables use in Python scripts, CI, and data tooling outside the Node.js runtime |
 
 ---
 
