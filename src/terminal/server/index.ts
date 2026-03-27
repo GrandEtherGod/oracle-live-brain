@@ -7,6 +7,9 @@ import Anthropic from '@anthropic-ai/sdk';
 import { processVoiceInput } from './claude';
 import { createPtySession, runCommand, resizePty } from './pty';
 import { ClientMessage, ServerMessage } from './types';
+import { runAutoDream } from './autodream';
+import { runAutoCrystalize } from './autocrystalize';
+import { readDreams } from './memory';
 
 const app = express();
 const port = parseInt(process.env.PORT || '3000', 10);
@@ -23,6 +26,8 @@ const wss = new WebSocketServer({ server });
 
 wss.on('connection', (ws: WebSocket) => {
   console.log('[terminal] client connected');
+
+  const sessionStartTime = Date.now();
 
   // Per-connection conversation history for Claude
   const conversationHistory: Anthropic.MessageParam[] = [];
@@ -62,6 +67,27 @@ wss.on('connection', (ws: WebSocket) => {
         const echo: ServerMessage = { type: 'ai_response', text: `[Voice] ${msg.text}` };
         ws.send(JSON.stringify(echo));
 
+        // Voice command: explicit crystalize trigger
+        if (/\bcrystall?i[sz]e\b/i.test(msg.text)) {
+          try {
+            const crystal = await runAutoCrystalize(1);
+            const crystalMsg: ServerMessage = {
+              type: 'ai_response',
+              text: crystal
+                ? `[AutoCrystalize] Crystal v${crystal.version} written: ${crystal.title}`
+                : '[AutoCrystalize] No dreams to crystallize yet.',
+            };
+            ws.send(JSON.stringify(crystalMsg));
+          } catch (err) {
+            const errMsg: ServerMessage = {
+              type: 'error',
+              message: `AutoCrystalize error: ${err instanceof Error ? err.message : 'unknown error'}`,
+            };
+            ws.send(JSON.stringify(errMsg));
+          }
+          break;
+        }
+
         try {
           const action = await processVoiceInput(msg.text, conversationHistory);
 
@@ -99,9 +125,24 @@ wss.on('connection', (ws: WebSocket) => {
     }
   });
 
-  ws.on('close', () => {
+  ws.on('close', async () => {
     console.log('[terminal] client disconnected');
     ptyProcess.kill();
+    if (conversationHistory.length > 0) {
+      try {
+        const dream = await runAutoDream(conversationHistory, sessionStartTime);
+        console.log(`[autodream] Session reflected: ${dream.id}`);
+        const dreams = await readDreams();
+        if (dreams.length >= 3) {
+          const crystal = await runAutoCrystalize();
+          if (crystal) {
+            console.log(`[autocrystalize] Crystal v${crystal.version} written: ${crystal.title}`);
+          }
+        }
+      } catch (err) {
+        console.warn('[autodream] Post-session reflection failed:', err);
+      }
+    }
   });
 
   ws.on('error', (err) => {

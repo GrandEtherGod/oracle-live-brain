@@ -1,4 +1,4 @@
-"""Unit tests for openclaw.memory — session and crystal persistence helpers."""
+"""Tests for openclaw.memory — I/O primitives for AutoDream + AutoCrystalize."""
 
 from __future__ import annotations
 
@@ -7,172 +7,166 @@ from pathlib import Path
 
 import pytest
 
-import openclaw.memory as memory
+import openclaw.memory as mem
+from openclaw.memory import (
+    CrystalEntry,
+    DreamEntry,
+    append_dream,
+    next_crystal_version,
+    read_dreams,
+    write_crystal,
+)
 
 
-@pytest.fixture(autouse=True)
-def _patch_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Redirect all storage paths into a temporary directory."""
-    monkeypatch.setattr(memory, "AUTODREAM_DIR", tmp_path / "autodream")
-    monkeypatch.setattr(memory, "CRYSTALS_DIR", tmp_path / "crystals")
+def _make_dream(id_: str = "abc123") -> DreamEntry:
+    return DreamEntry(
+        id=id_,
+        timestamp="2026-01-01T00:00:00+00:00",
+        summary="Test session summary.",
+        key_insights=["insight 1", "insight 2"],
+        topics=["testing"],
+        commands_run=["echo hello"],
+        session_duration_s=1.5,
+    )
 
 
-# ---------------------------------------------------------------------------
-# Session persistence
-# ---------------------------------------------------------------------------
-
-
-class TestSessionPersistence:
-    def test_load_nonexistent_returns_none(self) -> None:
-        assert memory.load_session("ghost") is None
-
-    def test_save_and_load_roundtrip(self) -> None:
-        messages = [{"role": "user", "content": "hello"}]
-        notes = [{"stored_at": "2026-01-01T00:00:00+00:00", "text": "hi"}]
-        memory.save_session("s1", messages, notes)
-        data = memory.load_session("s1")
-        assert data is not None
-        assert data["session_id"] == "s1"
-        assert data["messages"] == messages
-        assert data["notes"] == notes
-
-    def test_save_preserves_created_at(self) -> None:
-        memory.save_session("s1", [], [])
-        first = memory.load_session("s1")
-        assert first is not None
-        created = first["created_at"]
-
-        memory.save_session("s1", [{"role": "user", "content": "more"}], [])
-        second = memory.load_session("s1")
-        assert second is not None
-        assert second["created_at"] == created
-
-    def test_save_updates_updated_at(self) -> None:
-        memory.save_session("s1", [], [])
-        first = memory.load_session("s1")
-        assert first is not None
-
-        memory.save_session("s1", [], [])
-        second = memory.load_session("s1")
-        assert second is not None
-        # updated_at must be present and a string
-        assert isinstance(second["updated_at"], str)
-
-    def test_list_session_ids_empty(self) -> None:
-        assert memory.list_session_ids() == []
-
-    def test_list_session_ids_returns_stems(self) -> None:
-        memory.save_session("alpha", [], [])
-        memory.save_session("beta", [], [])
-        assert memory.list_session_ids() == ["alpha", "beta"]
-
-    def test_save_creates_directory_if_missing(self, tmp_path: Path) -> None:
-        deep = tmp_path / "deep" / "autodream"
-        import openclaw.memory as m
-        import importlib
-        # Directly test mkdir by patching and calling save_session
-        memory.AUTODREAM_DIR.mkdir(parents=True, exist_ok=True)
-        memory.save_session("new", [], [])
-        assert (memory.AUTODREAM_DIR / "new.json").exists()
-
-
-class TestSessionSearch:
-    def test_search_empty_dir_returns_empty_list(self) -> None:
-        assert memory.search_sessions("anything") == []
-
-    def test_search_finds_user_message(self) -> None:
-        msgs = [{"role": "user", "content": "I use Python 3.12"}]
-        memory.save_session("sess", msgs, [])
-        results = memory.search_sessions("Python")
-        assert len(results) == 1
-        assert results[0]["session_id"] == "sess"
-        assert "Python" in results[0]["context"]
-
-    def test_search_finds_note(self) -> None:
-        notes = [{"stored_at": "2026-01-01T00:00:00+00:00", "text": "favourite editor is vim"}]
-        memory.save_session("sess", [], notes)
-        results = memory.search_sessions("vim")
-        assert len(results) == 1
-        assert "vim" in results[0]["context"]
-
-    def test_search_case_insensitive(self) -> None:
-        msgs = [{"role": "user", "content": "I love RUST programming"}]
-        memory.save_session("sess", msgs, [])
-        results = memory.search_sessions("rust")
-        assert len(results) == 1
-
-    def test_search_no_match_returns_empty(self) -> None:
-        msgs = [{"role": "user", "content": "Hello world"}]
-        memory.save_session("sess", msgs, [])
-        assert memory.search_sessions("xyzzy") == []
-
-    def test_search_returns_one_match_per_session(self) -> None:
-        msgs = [
-            {"role": "user", "content": "Python is great"},
-            {"role": "user", "content": "Python rules"},
-        ]
-        memory.save_session("sess", msgs, [])
-        results = memory.search_sessions("Python")
-        assert len(results) == 1
-
-    def test_search_across_multiple_sessions(self) -> None:
-        memory.save_session("a", [{"role": "user", "content": "docker tip"}], [])
-        memory.save_session("b", [{"role": "user", "content": "docker tip"}], [])
-        results = memory.search_sessions("docker")
-        assert len(results) == 2
+def _make_crystal(version: int = 1) -> CrystalEntry:
+    return CrystalEntry(
+        version=version,
+        timestamp="2026-01-01T00:00:00+00:00",
+        title="Test Crystal",
+        content="Synthesized content.",
+        key_facts=["fact 1", "fact 2"],
+        source_dream_ids=["abc123"],
+    )
 
 
 # ---------------------------------------------------------------------------
-# Crystal persistence
+# Dreams I/O
 # ---------------------------------------------------------------------------
 
 
-class TestCrystalPersistence:
-    def test_save_crystal_returns_uuid_string(self) -> None:
-        cid = memory.save_crystal("s", "topic", "summary", [], [])
-        assert isinstance(cid, str)
-        assert len(cid) == 36  # UUID4 format
+class TestAppendDream:
+    def test_creates_file_and_directory(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        target = tmp_path / "dreams" / "dreams.jsonl"
+        monkeypatch.setattr(mem, "_dreams_path", lambda: target)
+        target.parent.mkdir(parents=True, exist_ok=True)
 
-    def test_save_and_load_crystal_roundtrip(self) -> None:
-        cid = memory.save_crystal(
-            source_session="sess",
-            topic="Python",
-            summary="User likes Python",
-            facts=["Prefers Python 3.12"],
-            tags=["python"],
-        )
-        c = memory.load_crystal(cid)
-        assert c is not None
-        assert c["id"] == cid
-        assert c["source_session"] == "sess"
-        assert c["topic"] == "Python"
-        assert c["summary"] == "User likes Python"
-        assert c["facts"] == ["Prefers Python 3.12"]
-        assert c["tags"] == ["python"]
+        append_dream(_make_dream())
 
-    def test_load_nonexistent_crystal_returns_none(self) -> None:
-        assert memory.load_crystal("00000000-0000-0000-0000-000000000000") is None
+        assert target.exists()
 
-    def test_list_crystals_empty(self) -> None:
-        assert memory.list_crystals() == []
+    def test_appends_correct_json(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        target = tmp_path / "dreams.jsonl"
+        monkeypatch.setattr(mem, "_dreams_path", lambda: target)
 
-    def test_list_crystals_all(self) -> None:
-        memory.save_crystal("s", "A", "sum A", [], ["x"])
-        memory.save_crystal("s", "B", "sum B", [], ["y"])
-        crystals = memory.list_crystals()
-        assert len(crystals) == 2
+        entry = _make_dream("id001")
+        append_dream(entry)
 
-    def test_list_crystals_filtered_by_tag(self) -> None:
-        memory.save_crystal("s", "A", "sum", [], ["python"])
-        memory.save_crystal("s", "B", "sum", [], ["rust"])
-        results = memory.list_crystals(tag="python")
+        lines = target.read_text().strip().splitlines()
+        assert len(lines) == 1
+        parsed = json.loads(lines[0])
+        assert parsed["id"] == "id001"
+        assert parsed["summary"] == "Test session summary."
+
+    def test_multiple_appends(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        target = tmp_path / "dreams.jsonl"
+        monkeypatch.setattr(mem, "_dreams_path", lambda: target)
+
+        append_dream(_make_dream("id001"))
+        append_dream(_make_dream("id002"))
+
+        lines = target.read_text().strip().splitlines()
+        assert len(lines) == 2
+        assert json.loads(lines[1])["id"] == "id002"
+
+
+class TestReadDreams:
+    def test_returns_empty_list_when_file_missing(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        target = tmp_path / "nonexistent.jsonl"
+        monkeypatch.setattr(mem, "_dreams_path", lambda: target)
+
+        assert read_dreams() == []
+
+    def test_round_trips_dream_entry(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        target = tmp_path / "dreams.jsonl"
+        monkeypatch.setattr(mem, "_dreams_path", lambda: target)
+
+        entry = _make_dream("round001")
+        append_dream(entry)
+
+        results = read_dreams()
         assert len(results) == 1
-        assert results[0]["topic"] == "A"
+        assert results[0].id == "round001"
+        assert results[0].topics == ["testing"]
 
-    def test_list_crystals_tag_no_match(self) -> None:
-        memory.save_crystal("s", "A", "sum", [], ["python"])
-        assert memory.list_crystals(tag="go") == []
+    def test_skips_malformed_lines(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        target = tmp_path / "dreams.jsonl"
+        monkeypatch.setattr(mem, "_dreams_path", lambda: target)
 
-    def test_save_creates_crystals_directory(self) -> None:
-        memory.save_crystal("s", "t", "sum", [], [])
-        assert memory.CRYSTALS_DIR.exists()
+        target.write_text('{"broken": true}\n' + json.dumps({
+            "id": "good001", "timestamp": "t", "summary": "s",
+            "key_insights": [], "topics": [], "commands_run": [], "session_duration_s": 0.0
+        }) + "\n")
+
+        results = read_dreams()
+        assert len(results) == 1
+        assert results[0].id == "good001"
+
+    def test_skips_empty_lines(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        target = tmp_path / "dreams.jsonl"
+        monkeypatch.setattr(mem, "_dreams_path", lambda: target)
+
+        entry = _make_dream("skip001")
+        append_dream(entry)
+        target.write_text(target.read_text() + "\n\n")
+
+        results = read_dreams()
+        assert len(results) == 1
+
+
+# ---------------------------------------------------------------------------
+# Crystals I/O
+# ---------------------------------------------------------------------------
+
+
+class TestNextCrystalVersion:
+    def test_returns_one_when_no_crystals(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(mem, "_crystals_dir", lambda: tmp_path)
+        assert next_crystal_version() == 1
+
+    def test_returns_max_plus_one(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(mem, "_crystals_dir", lambda: tmp_path)
+        (tmp_path / "crystal_1.json").write_text("{}")
+        (tmp_path / "crystal_3.json").write_text("{}")
+        assert next_crystal_version() == 4
+
+    def test_ignores_non_crystal_files(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(mem, "_crystals_dir", lambda: tmp_path)
+        (tmp_path / "other.json").write_text("{}")
+        assert next_crystal_version() == 1
+
+
+class TestWriteCrystal:
+    def test_creates_file(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(mem, "_crystals_dir", lambda: tmp_path)
+        entry = _make_crystal(version=1)
+        path = write_crystal(entry)
+        assert path.exists()
+
+    def test_file_contains_valid_json(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(mem, "_crystals_dir", lambda: tmp_path)
+        entry = _make_crystal(version=1)
+        path = write_crystal(entry)
+        data = json.loads(path.read_text())
+        assert data["title"] == "Test Crystal"
+        assert data["version"] == 1
+
+    def test_version_increments_correctly(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(mem, "_crystals_dir", lambda: tmp_path)
+        write_crystal(_make_crystal(version=1))
+        write_crystal(_make_crystal(version=2))
+        files = sorted(tmp_path.glob("crystal_*.json"))
+        assert len(files) == 2
+        assert files[0].name == "crystal_1.json"
+        assert files[1].name == "crystal_2.json"

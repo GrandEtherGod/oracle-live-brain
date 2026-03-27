@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import Any
 
 import anthropic
@@ -58,6 +59,7 @@ class OpenClawAgent:
         self.model = model
         self.max_tokens = max_tokens
         self._history: list[anthropic.types.MessageParam] = []
+        self._session_start: float = time.monotonic()
         self.tools = ToolRegistry()
         self._register_tools()
 
@@ -67,6 +69,7 @@ class OpenClawAgent:
     def reset(self) -> None:
         """Clear conversation history, starting a fresh session."""
         self._history.clear()
+        self._session_start = time.monotonic()
 
     def run(self, user_message: str) -> dict[str, Any]:
         """Send *user_message* and run the agent loop until a tool produces a result.

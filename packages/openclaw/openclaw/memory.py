@@ -1,217 +1,135 @@
-"""Persistence helpers for AutoDream sessions and AutoCrystalize crystals.
+"""Persistent memory layer for OpenClaw agents — AutoDream + AutoCrystalize.
 
-Session files:   ~/.aetherlinkos/autodream/<session_id>.json
-Crystal files:   ~/.aetherlinkos/crystals/<uuid>.json
+Storage layout::
+
+    ~/.openclaw/dreams/dreams.jsonl          # append-only dream log
+    ~/.openclaw/crystals/crystal_<n>.json    # versioned crystal artifacts
 """
 
 from __future__ import annotations
 
+import dataclasses
 import json
-import uuid
-from datetime import datetime, timezone
+import logging
+import re
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
-AUTODREAM_DIR = Path.home() / ".aetherlinkos" / "autodream"
-CRYSTALS_DIR = Path.home() / ".aetherlinkos" / "crystals"
+logger = logging.getLogger(__name__)
+
 
 # ---------------------------------------------------------------------------
-# Internal helpers
+# Data schemas
 # ---------------------------------------------------------------------------
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+@dataclass
+class DreamEntry:
+    """Structured reflection from a single agent session."""
+
+    id: str                      # uuid4().hex
+    timestamp: str               # ISO 8601 UTC
+    summary: str                 # 2-5 sentence prose from Claude
+    key_insights: list[str]      # 3-7 bullet observations
+    topics: list[str]            # 1-5 subject tags
+    commands_run: list[str]      # extracted shell commands (may be [])
+    session_duration_s: float    # wall-clock seconds
 
 
-def _pydantic_serializer(obj: Any) -> Any:
-    """JSON default= handler that serializes pydantic BaseModel instances.
+@dataclass
+class CrystalEntry:
+    """Distilled, versioned knowledge artifact from multiple dream entries."""
 
-    Anthropic SDK content blocks (TextBlock, ToolUseBlock, etc.) are pydantic
-    models.  Calling .model_dump() converts them to plain dicts so json.dumps
-    can serialize the full conversation history without errors.
+    version: int                 # monotonically increasing (1, 2, 3…)
+    timestamp: str               # ISO 8601 UTC
+    title: str                   # short phrase from Claude
+    content: str                 # multi-paragraph synthesis
+    key_facts: list[str]         # 5-15 distilled facts
+    source_dream_ids: list[str]  # dream UUIDs that fed this crystal
+
+
+# ---------------------------------------------------------------------------
+# Path helpers
+# ---------------------------------------------------------------------------
+
+
+def _dreams_path() -> Path:
+    p = Path.home() / ".openclaw" / "dreams" / "dreams.jsonl"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _crystals_dir() -> Path:
+    d = Path.home() / ".openclaw" / "crystals"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+# ---------------------------------------------------------------------------
+# Dream I/O
+# ---------------------------------------------------------------------------
+
+
+def append_dream(entry: DreamEntry) -> None:
+    """Append *entry* as a single JSON line to the dreams JSONL file."""
+    try:
+        path = _dreams_path()
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(dataclasses.asdict(entry)) + "\n")
+    except OSError as exc:
+        logger.warning("[autodream] Failed to write dream entry: %s", exc)
+
+
+def read_dreams() -> list[DreamEntry]:
+    """Return all stored dream entries, oldest first.
+
+    Returns an empty list if the file does not exist or contains no valid
+    entries.  Malformed lines are skipped silently.
     """
-    if hasattr(obj, "model_dump"):
-        return obj.model_dump()
-    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
-
-
-# ---------------------------------------------------------------------------
-# Session persistence
-# ---------------------------------------------------------------------------
-
-
-def session_path(session_id: str) -> Path:
-    """Return the Path for a session file (does not create it)."""
-    return AUTODREAM_DIR / f"{session_id}.json"
-
-
-def load_session(session_id: str) -> dict[str, Any] | None:
-    """Load a session file and return its contents, or None if absent."""
-    path = session_path(session_id)
+    path = _dreams_path()
     if not path.exists():
-        return None
-    with path.open() as f:
-        return json.load(f)  # type: ignore[no-any-return]
-
-
-def save_session(
-    session_id: str,
-    messages: list[dict[str, Any]],
-    notes: list[dict[str, Any]],
-) -> None:
-    """Persist a session to disk, creating the directory if needed.
-
-    ``created_at`` is preserved from any existing file; ``updated_at`` is
-    always refreshed.  Anthropic SDK pydantic objects inside *messages* are
-    automatically serialized via :func:`_pydantic_serializer`.
-    """
-    AUTODREAM_DIR.mkdir(parents=True, exist_ok=True)
-    path = session_path(session_id)
-
-    # Preserve created_at from an existing file.
-    created_at: str
-    if path.exists():
-        try:
-            existing = json.loads(path.read_text())
-            created_at = existing.get("created_at", _now_iso())
-        except (json.JSONDecodeError, OSError):
-            created_at = _now_iso()
-    else:
-        created_at = _now_iso()
-
-    data: dict[str, Any] = {
-        "session_id": session_id,
-        "created_at": created_at,
-        "updated_at": _now_iso(),
-        "messages": messages,
-        "notes": notes,
-    }
-    path.write_text(json.dumps(data, indent=2, default=_pydantic_serializer))
-
-
-def list_session_ids() -> list[str]:
-    """Return a sorted list of all known session IDs."""
-    if not AUTODREAM_DIR.exists():
-        return []
-    return sorted(p.stem for p in AUTODREAM_DIR.glob("*.json"))
-
-
-def search_sessions(query: str) -> list[dict[str, Any]]:
-    """Case-insensitive keyword search across all session files.
-
-    Scans message content and stored notes.  Returns a list of dicts::
-
-        [{"session_id": str, "context": str}, ...]
-
-    where *context* is a ~200-character snippet around the first match.
-    """
-    if not AUTODREAM_DIR.exists():
         return []
 
-    results: list[dict[str, Any]] = []
-    needle = query.lower()
+    entries: list[DreamEntry] = []
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    d = json.loads(line)
+                    entries.append(DreamEntry(**d))
+                except (json.JSONDecodeError, TypeError, KeyError):
+                    pass  # skip malformed lines
+    except OSError as exc:
+        logger.warning("[autodream] Failed to read dreams: %s", exc)
 
-    for path in sorted(AUTODREAM_DIR.glob("*.json")):
-        try:
-            data = json.loads(path.read_text())
-        except (json.JSONDecodeError, OSError):
-            continue
-
-        session_id = data.get("session_id", path.stem)
-
-        # Collect all text candidates from messages.
-        candidates: list[str] = []
-        for msg in data.get("messages", []):
-            content = msg.get("content", "")
-            if isinstance(content, str):
-                candidates.append(content)
-            elif isinstance(content, list):
-                for block in content:
-                    if isinstance(block, dict):
-                        if block.get("type") == "text":
-                            candidates.append(block.get("text", ""))
-                        elif block.get("type") == "tool_result":
-                            c = block.get("content", "")
-                            if isinstance(c, str):
-                                candidates.append(c)
-                        elif block.get("type") == "tool_use":
-                            candidates.append(json.dumps(block.get("input", {})))
-
-        # Collect text from notes.
-        for note in data.get("notes", []):
-            candidates.append(note.get("text", ""))
-
-        for text in candidates:
-            if needle in text.lower():
-                idx = text.lower().find(needle)
-                start = max(0, idx - 80)
-                snippet = text[start : start + 200].strip()
-                results.append({"session_id": session_id, "context": snippet})
-                break  # one match per session is enough
-
-    return results
+    return entries
 
 
 # ---------------------------------------------------------------------------
-# Crystal persistence
+# Crystal I/O
 # ---------------------------------------------------------------------------
 
 
-def crystal_path(crystal_id: str) -> Path:
-    """Return the Path for a crystal file."""
-    return CRYSTALS_DIR / f"{crystal_id}.json"
+def next_crystal_version() -> int:
+    """Return the next crystal version number (1 if none exist yet)."""
+    crystals_dir = _crystals_dir()
+    versions: list[int] = []
+    for p in crystals_dir.glob("crystal_*.json"):
+        m = re.fullmatch(r"crystal_(\d+)\.json", p.name)
+        if m:
+            versions.append(int(m.group(1)))
+    return max(versions) + 1 if versions else 1
 
 
-def save_crystal(
-    source_session: str,
-    topic: str,
-    summary: str,
-    facts: list[str],
-    tags: list[str],
-) -> str:
-    """Write a new crystal to disk.  Returns the new crystal's UUID string."""
-    CRYSTALS_DIR.mkdir(parents=True, exist_ok=True)
-    crystal_id = str(uuid.uuid4())
-    data: dict[str, Any] = {
-        "id": crystal_id,
-        "created_at": _now_iso(),
-        "source_session": source_session,
-        "topic": topic,
-        "summary": summary,
-        "facts": facts,
-        "tags": tags,
-    }
-    crystal_path(crystal_id).write_text(json.dumps(data, indent=2))
-    return crystal_id
-
-
-def load_crystal(crystal_id: str) -> dict[str, Any] | None:
-    """Load a crystal by ID.  Returns None if not found."""
-    path = crystal_path(crystal_id)
-    if not path.exists():
-        return None
-    with path.open() as f:
-        return json.load(f)  # type: ignore[no-any-return]
-
-
-def list_crystals(tag: str | None = None) -> list[dict[str, Any]]:
-    """Return all crystals, optionally filtered by tag.
-
-    Each entry is the full crystal dict.  Results are sorted by ``created_at``
-    descending (newest first).
-    """
-    if not CRYSTALS_DIR.exists():
-        return []
-
-    crystals: list[dict[str, Any]] = []
-    for path in CRYSTALS_DIR.glob("*.json"):
-        try:
-            data = json.loads(path.read_text())
-        except (json.JSONDecodeError, OSError):
-            continue
-        if tag is None or tag in data.get("tags", []):
-            crystals.append(data)
-
-    crystals.sort(key=lambda c: c.get("created_at", ""), reverse=True)
-    return crystals
+def write_crystal(entry: CrystalEntry) -> Path:
+    """Write *entry* to a versioned JSON file and return the path."""
+    path = _crystals_dir() / f"crystal_{entry.version}.json"
+    try:
+        with path.open("w", encoding="utf-8") as fh:
+            json.dump(dataclasses.asdict(entry), fh, indent=2)
+    except OSError as exc:
+        logger.warning("[autocrystalize] Failed to write crystal: %s", exc)
+    return path

@@ -122,6 +122,93 @@ result dict  {tool: str, result: Any}
 
 ---
 
+## Memory Layer (AutoDream + AutoCrystalize)
+
+AetherLinkOS provides a persistent memory layer that runs automatically at session end and on demand.  Both the Python (OpenClaw) and TypeScript (voice terminal) layers implement the same two-stage pipeline.
+
+### AutoDream
+
+Runs **after each session ends**.  Calls Claude to reflect on the completed conversation history and persists a structured `DreamEntry` as a JSONL record.
+
+| Layer | Storage path |
+|-------|-------------|
+| Python (OpenClaw) | `~/.openclaw/dreams/dreams.jsonl` |
+| TypeScript (terminal) | `~/.aetherlink/dreams/dreams.jsonl` |
+
+**DreamEntry schema**:
+```json
+{
+  "id": "uuid4-hex",
+  "timestamp": "ISO 8601 UTC",
+  "summary": "2-5 sentence prose",
+  "key_insights": ["…"],
+  "topics": ["…"],
+  "commands_run": ["…"],
+  "session_duration_s": 12.3
+}
+```
+
+### AutoCrystalize
+
+Reads accumulated `DreamEntry` records and distills them into a versioned, permanent knowledge artifact ("crystal").
+
+| Layer | Storage path |
+|-------|-------------|
+| Python (OpenClaw) | `~/.openclaw/crystals/crystal_<n>.json` |
+| TypeScript (terminal) | `~/.aetherlink/crystals/crystal_<n>.json` |
+
+**CrystalEntry schema**:
+```json
+{
+  "version": 1,
+  "timestamp": "ISO 8601 UTC",
+  "title": "short phrase",
+  "content": "multi-paragraph synthesis",
+  "key_facts": ["…"],
+  "source_dream_ids": ["…"]
+}
+```
+
+### Data flow
+
+```
+Session ends (WebSocket close / agent.reset())
+    │
+    ▼
+AutoDream.dream() / runAutoDream()
+    │  serializes conversation history (last 50 messages / 40 000 chars)
+    │  calls Claude → reflection JSON
+    │  appends DreamEntry to dreams.jsonl
+    ▼
+[if dreams ≥ 3  OR  explicit "crystalize" voice command]
+AutoCrystalize.crystalize() / runAutoCrystalize()
+    │  reads all DreamEntries
+    │  calls Claude → distillation JSON
+    │  writes CrystalEntry to crystal_<version>.json
+    ▼
+Persistent versioned knowledge artifact
+```
+
+### Python agents
+
+| Agent class | Purpose |
+|-------------|---------|
+| `AutoDreamAgent` | `TerminalAgent` + post-session reflection |
+| `AutoCrystalizeAgent` | `AutoDreamAgent` + auto-solidification (threshold = 3 dreams) |
+
+CLI usage:
+```bash
+openclaw chat --agent autodream        # reflects on exit
+openclaw chat --agent autocrystalize   # reflects + crystallizes when threshold met
+```
+
+### TypeScript hooks
+
+- `ws.on('close', ...)` in `src/terminal/server/index.ts` calls `runAutoDream` then `runAutoCrystalize` (if ≥ 3 dreams).
+- Voice command matching `/crystali[sz]e/i` triggers `runAutoCrystalize` mid-session.
+
+---
+
 ## Key Design Decisions
 
 | Decision | Rationale |

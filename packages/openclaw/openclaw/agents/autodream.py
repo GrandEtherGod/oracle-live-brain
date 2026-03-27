@@ -1,193 +1,167 @@
-"""AutoDreamAgent — persistent memory agent for AetherLinkOS."""
+"""AutoDreamAgent — async post-session reflection agent.
+
+After each session ends (via :meth:`reset` or an explicit :meth:`dream` call),
+this agent calls Claude to reflect on the conversation history and persists a
+structured :class:`~openclaw.memory.DreamEntry` to disk.
+
+Usage::
+
+    agent = AutoDreamAgent()
+    agent.run("list my project files")
+    agent.run("show git log")
+    # On session end:
+    dream = agent.dream()   # or just call agent.reset() which calls dream() first
+    print(dream.summary)
+"""
 
 from __future__ import annotations
 
 import json
+import logging
+import time
+import uuid
+from datetime import datetime, timezone
 from typing import Any
 
-from ..agent import DEFAULT_MODEL, OpenClawAgent
-from ..memory import (
-    list_session_ids,
-    load_session,
-    save_session,
-    search_sessions,
-)
-from ..tools import Tool
+import anthropic
 
-DEFAULT_SESSION = "default"
+from ..agent import OpenClawAgent
+from ..memory import DreamEntry, append_dream
+from ..tools import Tool
+from .terminal import TerminalAgent
+
+logger = logging.getLogger(__name__)
+
+_DREAM_SYSTEM_PROMPT = (
+    "You are a session reflection assistant for AetherLinkOS. "
+    "You will be given a conversation transcript between a user and an AI agent. "
+    "Respond ONLY with a valid JSON object — no prose, no markdown fences. "
+    "The JSON object must have exactly these keys:\n"
+    '  "summary": string (2-5 sentences describing what happened),\n'
+    '  "key_insights": array of strings (3-7 observations),\n'
+    '  "topics": array of strings (1-5 subject tags),\n'
+    '  "commands_run": array of strings (shell commands that were executed, may be empty)'
+)
+
+_MAX_HISTORY_MESSAGES = 50
+_MAX_HISTORY_CHARS = 40_000
+
+
+def _serialize_history(history: list[Any]) -> str:
+    """Convert conversation history to a readable transcript string."""
+    lines: list[str] = []
+    messages = history[-_MAX_HISTORY_MESSAGES:]
+    truncated = len(history) - len(messages)
+    if truncated > 0:
+        lines.append(f"[… {truncated} earlier messages truncated …]\n")
+
+    for msg in messages:
+        role = msg.get("role", "unknown").capitalize()
+        content = msg.get("content", "")
+        if isinstance(content, str):
+            lines.append(f"{role}: {content}")
+        elif isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict):
+                    if block.get("type") == "text":
+                        lines.append(f"{role}: {block.get('text', '')}")
+                    elif block.get("type") == "tool_use":
+                        lines.append(
+                            f"{role} [tool:{block.get('name','')}]: "
+                            f"{json.dumps(block.get('input', {}))}"
+                        )
+                    elif block.get("type") == "tool_result":
+                        result_content = block.get("content", "")
+                        lines.append(f"ToolResult: {result_content}")
+
+    transcript = "\n".join(lines)
+    if len(transcript) > _MAX_HISTORY_CHARS:
+        transcript = transcript[-_MAX_HISTORY_CHARS:]
+        transcript = "[… transcript truncated …]\n" + transcript
+    return transcript
+
+
+def _extract_json(text: str) -> str:
+    """Strip markdown code fences from *text* if present."""
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        # Drop first line (```json or ```) and last line (```)
+        inner = lines[1:] if lines[-1].strip() == "```" else lines[1:]
+        if inner and inner[-1].strip() == "```":
+            inner = inner[:-1]
+        text = "\n".join(inner)
+    return text.strip()
 
 
 class AutoDreamAgent(OpenClawAgent):
-    """Agent with persistent conversation memory stored across sessions.
+    """Agent that reflects on each session and persists a DreamEntry.
 
-    On construction, history is loaded from
-    ``~/.aetherlinkos/autodream/<session_id>.json`` if that file exists.
-    After every :meth:`run` call the updated history is saved back to disk —
-    even if the call raises an exception.
-
-    Constructor parameters (in addition to :class:`~openclaw.agent.OpenClawAgent`):
-
-    Args:
-        session_id: Identifies which session file to load/save.
-            Defaults to ``"default"``.
+    Inherits the ``run_command`` / ``speak`` tool pair from
+    :class:`~openclaw.agents.terminal.TerminalAgent` by default.
     """
 
-    system_prompt: str = (
-        "You are AutoDream, a memory-enabled AI agent in AetherLinkOS. "
-        "You remember past conversations across sessions using persistent storage. "
-        "Use recall_memory to search across all past sessions when the user asks "
-        "about anything you might have discussed before. "
-        "Use store_memory to save important facts, preferences, or decisions the "
-        "user shares. "
-        "Use list_sessions to show the user what sessions you have memory of. "
-        "Use speak to reply to the user. "
-        "Always check memory before answering questions about past interactions."
-    )
+    system_prompt = TerminalAgent.system_prompt
 
-    def __init__(
-        self,
-        *,
-        session_id: str = DEFAULT_SESSION,
-        api_key: str | None = None,
-        model: str = DEFAULT_MODEL,
-        max_tokens: int = 2048,
-    ) -> None:
-        # Set these before super().__init__() so _register_tools() can reference
-        # self.session_id if needed, and _notes is ready before _load_session().
-        self.session_id = session_id
-        self._notes: list[dict[str, Any]] = []
-        # super().__init__() calls _register_tools() internally.
-        super().__init__(api_key=api_key, model=model, max_tokens=max_tokens)
-        # Load persisted state after tools are registered.
-        self._load_session()
-
-    # ------------------------------------------------------------------
-    # Persistence helpers
-    # ------------------------------------------------------------------
-
-    def _load_session(self) -> None:
-        """Populate history and notes from disk if the session file exists.
-
-        Note: MessageParam is a TypedDict and the Anthropic SDK accepts plain
-        dicts that match its shape — so JSON-deserialized dicts are compatible
-        with self._history without any custom deserialization.
-        """
-        data = load_session(self.session_id)
-        if data is not None:
-            self._history = data.get("messages", [])
-            self._notes = data.get("notes", [])
-
-    def _save_session(self) -> None:
-        """Persist current history and notes to disk."""
-        save_session(self.session_id, self._history, self._notes)
-
-    # ------------------------------------------------------------------
-    # Overrides
-    # ------------------------------------------------------------------
-
-    def reset(self) -> None:
-        """Clear in-memory history and notes, then save the cleared state."""
-        super().reset()
-        self._notes.clear()
-        self._save_session()
-
-    def run(self, user_message: str) -> dict[str, Any]:
-        """Delegate to the parent agent loop, then persist history to disk."""
-        try:
-            return super().run(user_message)
-        finally:
-            # Runs even on exception — history is never lost.
-            self._save_session()
-
-    # ------------------------------------------------------------------
-    # Tool registration
-    # ------------------------------------------------------------------
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._session_start: float = time.monotonic()
 
     def _register_tools(self) -> None:
-        self.tools.register(Tool(
-            name="recall_memory",
-            description=(
-                "Search all past sessions for exchanges relevant to a query. "
-                "Returns a list of matching text snippets with their source session ID."
-            ),
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Keywords to search for across all session files",
-                    },
-                },
-                "required": ["query"],
-            },
-            handler=self._recall_memory,
-        ))
-        self.tools.register(Tool(
-            name="store_memory",
-            description=(
-                "Save an important note or fact to the current session's persistent memory."
-            ),
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "note": {
-                        "type": "string",
-                        "description": "The note or fact to store",
-                    },
-                },
-                "required": ["note"],
-            },
-            handler=self._store_memory,
-        ))
-        self.tools.register(Tool(
-            name="list_sessions",
-            description="List all known session IDs that have stored memory.",
-            input_schema={
-                "type": "object",
-                "properties": {},
-                "required": [],
-            },
-            handler=self._list_sessions,
-        ))
-        self.tools.register(Tool(
-            name="speak",
-            description=(
-                "Return a plain-text response to the user. "
-                "Use to answer questions, share recalled memories, or summarize information."
-            ),
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "text": {
-                        "type": "string",
-                        "description": "Text to return to the user",
-                    },
-                },
-                "required": ["text"],
-            },
-            handler=lambda text: text,
-        ))
+        # Re-use TerminalAgent's tool definitions without subclassing it
+        terminal = TerminalAgent.__new__(TerminalAgent)
+        terminal.tools = self.tools
+        TerminalAgent._register_tools(terminal)
 
-    # ------------------------------------------------------------------
-    # Tool handlers
-    # ------------------------------------------------------------------
+    def reset(self) -> None:
+        """Reflect on the current session, then clear history."""
+        if self._history:
+            self.dream()
+        super().reset()
+        self._session_start = time.monotonic()
 
-    def _recall_memory(self, query: str) -> str:
-        matches = search_sessions(query)
-        if not matches:
-            return f"No past sessions contain anything matching '{query}'."
-        return json.dumps(matches, indent=2)
+    def dream(self) -> DreamEntry | None:
+        """Call Claude to reflect on :attr:`_history` and persist a DreamEntry.
 
-    def _store_memory(self, note: str) -> str:
-        from datetime import datetime, timezone
-        self._notes.append({
-            "stored_at": datetime.now(timezone.utc).isoformat(),
-            "text": note,
-        })
-        return f"Stored: {note}"
+        Returns the persisted :class:`~openclaw.memory.DreamEntry`, or
+        ``None`` if history is empty or the reflection call fails.
+        """
+        if not self._history:
+            return None
 
-    def _list_sessions(self) -> str:
-        ids = list_session_ids()
-        if not ids:
-            return "No sessions found."
-        return "Sessions: " + ", ".join(ids)
+        duration = time.monotonic() - self._session_start
+        transcript = _serialize_history(self._history)
+
+        prompt = (
+            "Please reflect on the following agent session transcript and return "
+            "a JSON summary as described.\n\n"
+            f"Transcript:\n{transcript}"
+        )
+
+        try:
+            response = self._client.messages.create(
+                model=self.model,
+                max_tokens=1024,
+                system=_DREAM_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw_text = next(
+                (b.text for b in response.content if hasattr(b, "text")), ""
+            )
+            parsed = json.loads(_extract_json(raw_text))
+        except (anthropic.APIError, json.JSONDecodeError, Exception) as exc:
+            logger.warning("[autodream] Reflection failed: %s", exc)
+            return None
+
+        entry = DreamEntry(
+            id=uuid.uuid4().hex,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            summary=parsed.get("summary", ""),
+            key_insights=parsed.get("key_insights", []),
+            topics=parsed.get("topics", []),
+            commands_run=parsed.get("commands_run", []),
+            session_duration_s=round(duration, 2),
+        )
+        append_dream(entry)
+        logger.info("[autodream] Session reflected: %s", entry.id)
+        return entry

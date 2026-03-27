@@ -55,18 +55,16 @@ def main() -> None:
     show_default=True,
     help="AetherLinkOS backend URL (used by the theia agent).",
 )
-@click.option(
-    "--session",
-    default="default",
-    show_default=True,
-    help="Session ID for autodream/autocrystalize agents.",
-)
 @click.argument("prompt")
-def run(agent: str, model: str, backend: str, session: str, prompt: str) -> None:
+def run(agent: str, model: str, backend: str, prompt: str) -> None:
     """Run a single PROMPT through an OpenClaw agent and print the result."""
-    instance = _build_agent(agent, model, backend, session)
+    from .agents.autodream import AutoDreamAgent
+
+    instance = _build_agent(agent, model, backend)
     result = instance.run(prompt)
     click.echo(result["result"])
+    if isinstance(instance, AutoDreamAgent):
+        instance.dream()
 
 
 # ---------------------------------------------------------------------------
@@ -94,15 +92,11 @@ def run(agent: str, model: str, backend: str, session: str, prompt: str) -> None
     show_default=True,
     help="AetherLinkOS backend URL (used by the theia agent).",
 )
-@click.option(
-    "--session",
-    default="default",
-    show_default=True,
-    help="Session ID for autodream/autocrystalize agents.",
-)
-def chat(agent: str, model: str, backend: str, session: str) -> None:
+def chat(agent: str, model: str, backend: str) -> None:
     """Start an interactive chat session with an OpenClaw agent."""
-    instance = _build_agent(agent, model, backend, session)
+    from .agents.autodream import AutoDreamAgent
+
+    instance = _build_agent(agent, model, backend)
     click.echo(f"OpenClaw {agent} agent ready. Type 'exit' or Ctrl-D to quit.\n")
 
     while True:
@@ -119,6 +113,10 @@ def chat(agent: str, model: str, backend: str, session: str) -> None:
         result = instance.run(user_input)
         click.echo(f"agent: {result['result']}\n")
 
+    if isinstance(instance, AutoDreamAgent):
+        instance.dream()
+        click.echo("[AutoDream] Session reflected.")
+
 
 # ---------------------------------------------------------------------------
 # openclaw list-agents
@@ -129,13 +127,13 @@ def chat(agent: str, model: str, backend: str, session: str) -> None:
 def list_agents() -> None:
     """List all available OpenClaw agent types."""
     rows = [
-        ("terminal",       "Executes shell commands via Claude tool use"),
-        ("theia",          "Interacts with the Eclipse Theia IDE backend"),
-        ("autodream",      "Persistent memory agent — remembers across sessions"),
-        ("autocrystalize", "Memory + crystallization — extracts structured facts"),
+        ("terminal", "Executes shell commands via Claude tool use"),
+        ("theia", "Interacts with the Eclipse Theia IDE backend"),
+        ("autodream", "Terminal agent with post-session reflection to ~/.openclaw/dreams/"),
+        ("autocrystalize", "AutoDream + auto-solidification of dreams into ~/.openclaw/crystals/"),
     ]
     for name, description in rows:
-        click.echo(f"  {name:<12} {description}")
+        click.echo(f"  {name:<16} {description}")
 
 
 # ---------------------------------------------------------------------------
@@ -143,13 +141,11 @@ def list_agents() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _build_agent(
-    agent_type: str, model: str, backend: str, session: str = "default"
-) -> OpenClawAgent:
-    from .agents.terminal import TerminalAgent
-    from .agents.theia import TheiaAgent
+def _build_agent(agent_type: str, model: str, backend: str) -> OpenClawAgent:
     from .agents.autodream import AutoDreamAgent
     from .agents.autocrystalize import AutoCrystalizeAgent
+    from .agents.terminal import TerminalAgent
+    from .agents.theia import TheiaAgent
 
     kwargs: dict = {"model": model}
     if agent_type == "terminal":
@@ -157,7 +153,7 @@ def _build_agent(
     if agent_type == "theia":
         return TheiaAgent(backend_url=backend, **kwargs)
     if agent_type == "autodream":
-        return AutoDreamAgent(session_id=session, **kwargs)
+        return AutoDreamAgent(**kwargs)
     if agent_type == "autocrystalize":
-        return AutoCrystalizeAgent(session_id=session, **kwargs)
+        return AutoCrystalizeAgent(**kwargs)
     raise click.ClickException(f"Unknown agent type: {agent_type}")
