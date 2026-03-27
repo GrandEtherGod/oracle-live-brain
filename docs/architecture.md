@@ -78,15 +78,29 @@ packages/openclaw/
 ├── openclaw/
 │   ├── agent.py            # OpenClawAgent — base class (Claude tool-use loop)
 │   ├── tools.py            # Tool, ToolRegistry, @tool decorator
+│   ├── memory.py           # Persistence helpers — session + crystal I/O
 │   ├── cli.py              # `openclaw` CLI  (run / chat / list-agents)
 │   └── agents/
-│       ├── terminal.py     # TerminalAgent  — run_command + speak tools
-│       └── theia.py        # TheiaAgent     — theia_open_file / run_task / workspace_info
+│       ├── terminal.py     # TerminalAgent       — run_command + speak tools
+│       ├── theia.py        # TheiaAgent          — theia_open_file / run_task / workspace_info
+│       ├── autodream.py    # AutoDreamAgent      — persistent memory across sessions
+│       └── autocrystalize.py # AutoCrystalizeAgent — memory + knowledge crystallization
 └── tests/                  # pytest unit tests (no API key required)
 ```
 
 **Install**: `pip install openclaw-agents`
 **CLI**: `openclaw run "list my files"` / `openclaw chat --agent theia`
+
+### Persistent memory storage
+
+`AutoDreamAgent` and `AutoCrystalizeAgent` write to `~/.aetherlinkos/`:
+
+| Path | Contents |
+|------|----------|
+| `~/.aetherlinkos/autodream/<session_id>.json` | Session conversation history + stored notes |
+| `~/.aetherlinkos/crystals/<uuid>.json` | Crystallized facts (summary, facts list, tags) |
+
+The `memory.py` module owns all filesystem I/O for both agents.  Session history is loaded on agent construction and saved after every `run()` call (even on exception).  Crystals are written by the `crystallize` tool via a scoped, non-tool-loop Claude API call that returns structured JSON.
 
 ### Agent architecture
 
