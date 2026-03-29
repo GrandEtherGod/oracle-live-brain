@@ -102,3 +102,5 @@ server.listen(port, () => {
   console.log(`[terminal] Server running at http://localhost:${port}`);
   console.log(`[terminal] WebSocket ready at ws://localhost:${port}`);
 });
+
+export { server };
