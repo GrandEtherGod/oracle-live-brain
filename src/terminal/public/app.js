@@ -53,11 +53,19 @@ term.onResize(({ cols, rows }) => {
 const WS_URL = `ws://${location.host}`;
 let ws = null;
 let reconnectTimer = null;
+let reconnectDelay = 1000;
+const MAX_RECONNECT_DELAY = 30000;
+
+function scheduleReconnect() {
+  reconnectTimer = setTimeout(connect, reconnectDelay);
+  reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
+}
 
 function connect() {
   ws = new WebSocket(WS_URL);
 
   ws.onopen = () => {
+    reconnectDelay = 1000;
     hideBanner();
     term.writeln('\x1b[32m✓ Connected to AetherLink terminal server\x1b[0m');
     term.writeln('\x1b[36mPress Space or click 🎤 to start voice input\x1b[0m\r\n');
@@ -72,7 +80,7 @@ function connect() {
 
   ws.onclose = () => {
     showBanner();
-    reconnectTimer = setTimeout(connect, 3000);
+    scheduleReconnect();
   };
 
   ws.onerror = () => { ws.close(); };
@@ -183,8 +191,10 @@ function stopListening() {
 
 function setStatus(state) {
   statusDot.classList.remove('listening', 'processing');
-  statusDot.classList.add(state);
-  statusText.textContent = state === 'processing' ? 'Processing…' : 'Listening…';
+  if (state === 'processing' || state === 'listening') statusDot.classList.add(state);
+  if (state === 'processing') statusText.textContent = 'Processing…';
+  else if (state === 'listening') statusText.textContent = 'Listening…';
+  else statusText.textContent = 'Ready';
 }
 
 btnMic.addEventListener('click', () => {
@@ -209,15 +219,21 @@ document.addEventListener('keydown', (e) => {
 const synth = window.speechSynthesis;
 let ttsEnabled = true;
 
+function cleanForDisplay(text) {
+  return text
+    .replace(/\x1b\[[0-9;]*[mGKHF]/g, '')  // ANSI CSI escape sequences
+    .replace(/^\[.*?\]\s*/, '');             // [Voice] / [AetherLink] prefix
+}
+
 function speak(text) {
   if (!ttsEnabled || !synth || !text) return;
-  // Strip ANSI-ish prefix markers before speaking
-  const clean = text.replace(/^\[.*?\]\s*/, '');
+  const clean = cleanForDisplay(text);
   if (!clean) return;
   synth.cancel(); // cancel any ongoing speech
   const utt = new SpeechSynthesisUtterance(clean);
   utt.rate = 1.05;
   utt.pitch = 1.0;
+  utt.onerror = (e) => console.warn('[tts] speech synthesis error:', e.error);
   synth.speak(utt);
 }
 
@@ -229,14 +245,12 @@ let aiResponseTimer = null;
 
 function showAiResponse(text) {
   if (!text) return;
-  aiResponseText.textContent = text.replace(/^\[.*?\]\s*/, '');
+  aiResponseText.textContent = cleanForDisplay(text);
   aiResponseBar.classList.add('visible');
   clearTimeout(aiResponseTimer);
   aiResponseTimer = setTimeout(() => {
     aiResponseBar.classList.remove('visible');
     setStatus('ready');
-    statusDot.classList.remove('processing');
-    statusText.textContent = 'Ready';
   }, 6000);
 }
 

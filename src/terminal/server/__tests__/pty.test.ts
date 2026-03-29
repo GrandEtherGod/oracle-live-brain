@@ -186,4 +186,16 @@ describe('resizePty', () => {
     resizePty(mockPty as unknown as nodePty.IPty, 40, 10);
     expect(mockPty.resize).toHaveBeenCalledWith(40, 10);
   });
+
+  it('clamps cols below minimum to 10', () => {
+    const mockPty = makeMockPtyProcess();
+    resizePty(mockPty as unknown as nodePty.IPty, 2, 24);
+    expect(mockPty.resize).toHaveBeenCalledWith(10, 24);
+  });
+
+  it('clamps rows above maximum to 100', () => {
+    const mockPty = makeMockPtyProcess();
+    resizePty(mockPty as unknown as nodePty.IPty, 80, 200);
+    expect(mockPty.resize).toHaveBeenCalledWith(80, 100);
+  });
 });

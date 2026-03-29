@@ -26,6 +26,7 @@ wss.on('connection', (ws: WebSocket) => {
 
   // Per-connection conversation history for Claude
   const conversationHistory: Anthropic.MessageParam[] = [];
+  let voiceInFlight = false;
 
   // Create a PTY session for this connection
   const ptyProcess = createPtySession(ws);
@@ -53,6 +54,9 @@ wss.on('connection', (ws: WebSocket) => {
 
       case 'voice_input': {
         if (!msg.text) break;
+        if (voiceInFlight) break;
+
+        voiceInFlight = true;
 
         // Show the transcribed text in the terminal
         const echo: ServerMessage = { type: 'ai_response', text: `[Voice] ${msg.text}` };
@@ -60,6 +64,11 @@ wss.on('connection', (ws: WebSocket) => {
 
         try {
           const action = await processVoiceInput(msg.text, conversationHistory);
+
+          // Window history to last 20 messages to prevent unbounded growth
+          if (conversationHistory.length > 20) {
+            conversationHistory.splice(0, conversationHistory.length - 20);
+          }
 
           if (action.type === 'command') {
             // Show Claude's chosen command, then execute it
@@ -77,6 +86,8 @@ wss.on('connection', (ws: WebSocket) => {
             message: `AI error: ${err instanceof Error ? err.message : 'unknown error'}`,
           };
           ws.send(JSON.stringify(errMsg));
+        } finally {
+          voiceInFlight = false;
         }
         break;
       }
