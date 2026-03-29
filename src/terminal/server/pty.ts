@@ -36,9 +36,15 @@ export function createPtySession(ws: WebSocket): pty.IPty {
 }
 
 export function runCommand(ptyProcess: pty.IPty, command: string): void {
-  ptyProcess.write(`${command}\r`);
+  try {
+    ptyProcess.write(`${command}\r`);
+  } catch (err) {
+    console.warn('[pty] write error:', err instanceof Error ? err.message : err);
+  }
 }
 
 export function resizePty(ptyProcess: pty.IPty, cols: number, rows: number): void {
-  ptyProcess.resize(cols, rows);
+  const safeCols = Math.max(10, Math.min(500, cols));
+  const safeRows = Math.max(5, Math.min(100, rows));
+  ptyProcess.resize(safeCols, safeRows);
 }

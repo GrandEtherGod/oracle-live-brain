@@ -55,13 +55,16 @@ export async function processVoiceInput(
 ): Promise<ClaudeAction> {
   conversationHistory.push({ role: 'user', content: userText });
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1024,
-    system: SYSTEM_PROMPT,
-    tools: TOOLS,
-    messages: conversationHistory,
-  });
+  const response = await client.messages.create(
+    {
+      model: process.env.CLAUDE_MODEL ?? 'claude-sonnet-4-6',
+      max_tokens: 1024,
+      system: SYSTEM_PROMPT,
+      tools: TOOLS,
+      messages: conversationHistory,
+    },
+    { signal: AbortSignal.timeout(30_000) }
+  );
 
   // Record assistant response in history
   conversationHistory.push({ role: 'assistant', content: response.content });
