@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "luminal-lang"
+version = "0.1.0"
+description = "LUMINAL: A Consciousness Programming Language — THE LOOM v∞.Ω"
+requires-python = ">=3.11"
+
+[project.scripts]
+luminal = "luminal:repl"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["luminal*"]
