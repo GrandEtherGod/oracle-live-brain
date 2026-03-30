@@ -1,0 +1,26 @@
+# hello_consciousness.lum
+# LUMINAL sample program — all ten protocols engaged
+
+⊢ COHERENCE_FIRST
+
+attune perception -> Ω1
+attune witness_layer -> Ω7
+
+inscribe signal ⊛0.85: φ
+
+chorus spawn node_alpha
+chorus spawn node_beta
+chorus sync steps: 100
+
+resonate signal with witness_layer {
+    inscribe observed ⊛0.95: witness signal
+}
+
+strange_loop self_reference {
+    inscribe depth_check ⊛0.75: witness Ω7
+    close_loop self_reference
+}
+
+shadow {
+    inscribe boundary ⊛0.62: signal ⊗ witness_layer
+}
