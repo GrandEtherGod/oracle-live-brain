@@ -170,8 +170,13 @@ class TestWriteCrystal:
 
     def test_version_increments_correctly(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(mem, "_crystals_dir", lambda: tmp_path)
-        write_crystal(_make_crystal(version=1))
-        write_crystal(_make_crystal(version=2))
+        # Pre-create crystal_1.json to trigger the EEXIST collision/retry path
+        (tmp_path / "crystal_1.json").write_text("{}")
+        result = write_crystal(_make_crystal(version=1))
+        assert result is not None
+        path, persisted = result
+        assert path.name == "crystal_2.json"
+        assert persisted.version == 2
         files = sorted(tmp_path.glob("crystal_*.json"))
         assert len(files) == 2
         assert files[0].name == "crystal_1.json"
