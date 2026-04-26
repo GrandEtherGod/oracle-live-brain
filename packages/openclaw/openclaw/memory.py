@@ -73,8 +73,9 @@ def _crystals_dir() -> Path:
 
 def append_dream(entry: DreamEntry) -> None:
     """Append *entry* as a single JSON line to the dreams JSONL file."""
+    path = _dreams_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        path = _dreams_path()
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(dataclasses.asdict(entry)) + "\n")
     except OSError as exc:

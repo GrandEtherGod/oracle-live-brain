@@ -74,9 +74,7 @@ class AutoCrystalizeAgent(AutoDreamAgent):
         super().reset()  # calls dream() then clears history
         dreams = read_dreams()
         if len(dreams) >= self.AUTO_CRYSTALIZE_THRESHOLD:
-            result = self.crystalize()
-            if result is not None:
-                clear_dreams()
+            self.crystalize()
 
     def crystalize(self) -> CrystalEntry | None:
         """Distill all stored dreams into a new versioned CrystalEntry.
@@ -106,7 +104,7 @@ class AutoCrystalizeAgent(AutoDreamAgent):
                 (b.text for b in response.content if hasattr(b, "text")), ""
             )
             parsed = json.loads(_extract_json(raw_text))
-        except (anthropic.APIError, json.JSONDecodeError, Exception) as exc:
+        except (anthropic.APIError, json.JSONDecodeError) as exc:
             logger.warning("[autocrystalize] Crystalization failed: %s", exc)
             return None
 
@@ -134,6 +132,7 @@ class AutoCrystalizeAgent(AutoDreamAgent):
             logger.warning("[autocrystalize] Crystal could not be persisted.")
             return None
         _, persisted = result
+        clear_dreams()
         logger.info(
             "[autocrystalize] Crystal v%d written: %s", persisted.version, persisted.title
         )

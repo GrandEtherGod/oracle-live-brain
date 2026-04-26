@@ -50,10 +50,11 @@ class TestAppendDream:
     def test_creates_file_and_directory(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         target = tmp_path / "dreams" / "dreams.jsonl"
         monkeypatch.setattr(mem, "_dreams_path", lambda: target)
-        target.parent.mkdir(parents=True, exist_ok=True)
+        assert not target.parent.exists()
 
         append_dream(_make_dream())
 
+        assert target.parent.exists()
         assert target.exists()
 
     def test_appends_correct_json(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
