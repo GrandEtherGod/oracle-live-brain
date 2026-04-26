@@ -68,7 +68,7 @@ class TestAutoDreamAgentDream:
 
         dreams_file = tmp_path / "dreams.jsonl"
         assert dreams_file.exists()
-        lines = [l for l in dreams_file.read_text().splitlines() if l.strip()]
+        lines = [line for line in dreams_file.read_text().splitlines() if line.strip()]
         assert len(lines) == 1
         data = json.loads(lines[0])
         assert data["commands_run"] == ["ls"]

@@ -151,7 +151,8 @@ class TestAutoCrystalizeAgentCrystalize:
         }
         agent._client.messages.create.return_value = _mock_dream_response(dream_payload)  # type: ignore[attr-defined]
 
-        monkeypatch.setattr(mem, "read_dreams", lambda: [_sample_dream()])  # only 1 dream
+        import openclaw.agents.autocrystalize as ac_mod
+        monkeypatch.setattr(ac_mod, "read_dreams", lambda: [_sample_dream()])  # only 1 dream
 
         agent._history = [{"role": "user", "content": "test"}]
         agent.reset()

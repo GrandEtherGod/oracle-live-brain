@@ -110,16 +110,20 @@ export async function nextCrystalVersion(): Promise<number> {
  * silent overwrites from concurrent callers.  Retries up to 5 times if the
  * target version file already exists.
  *
- * Returns the final file path on success, or null if the write fails.
+ * Returns the persisted file path and the final CrystalEntry (which may have
+ * a higher version number than requested when retries occurred), or null on
+ * failure.
  */
-export async function writeCrystal(entry: CrystalEntry): Promise<string | null> {
+export async function writeCrystal(
+  entry: CrystalEntry,
+): Promise<{ filePath: string; entry: CrystalEntry } | null> {
   const dir = crystalsDirPath();
   await ensureDir(dir);
 
   let version = entry.version;
   for (let attempt = 0; attempt < 5; attempt++) {
     const filePath = path.join(dir, `crystal_${version}.json`);
-    const entryWithVersion = attempt === 0 ? entry : { ...entry, version };
+    const entryWithVersion: CrystalEntry = attempt === 0 ? entry : { ...entry, version };
     try {
       // 'wx' flag = O_EXCL: fails with EEXIST if the file already exists,
       // preventing silent overwrites from concurrent crystallization calls.
@@ -127,7 +131,7 @@ export async function writeCrystal(entry: CrystalEntry): Promise<string | null> 
         encoding: 'utf-8',
         flag: 'wx',
       });
-      return filePath;
+      return { filePath, entry: entryWithVersion };
     } catch (err: unknown) {
       if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
         version += 1; // slot taken — try the next version

@@ -115,10 +115,10 @@ export async function runAutoDream(
   const entry: DreamEntry = {
     id: crypto.randomUUID(),
     timestamp: new Date().toISOString(),
-    summary: parsed.summary ?? '',
-    key_insights: parsed.key_insights ?? [],
-    topics: parsed.topics ?? [],
-    commands_run: parsed.commands_run ?? [],
+    summary: parsed.summary,
+    key_insights: parsed.key_insights,
+    topics: parsed.topics,
+    commands_run: parsed.commands_run,
     session_duration_s: (Date.now() - sessionStartMs) / 1000,
   };
 

@@ -139,15 +139,24 @@ describe('nextCrystalVersion', () => {
 
 describe('writeCrystal', () => {
   it('creates the crystal file', async () => {
-    const filePath = await writeCrystal(makeCrystal(1));
-    await expect(fs.access(filePath)).resolves.toBeUndefined();
+    const result = await writeCrystal(makeCrystal(1));
+    expect(result).not.toBeNull();
+    await expect(fs.access(result!.filePath)).resolves.toBeUndefined();
   });
 
   it('writes valid JSON', async () => {
-    const filePath = await writeCrystal(makeCrystal(1));
-    const data = JSON.parse(await fs.readFile(filePath, 'utf-8'));
+    const result = await writeCrystal(makeCrystal(1));
+    expect(result).not.toBeNull();
+    const data = JSON.parse(await fs.readFile(result!.filePath, 'utf-8'));
     expect(data.title).toBe('Test Crystal');
     expect(data.version).toBe(1);
+  });
+
+  it('returns the persisted entry', async () => {
+    const result = await writeCrystal(makeCrystal(1));
+    expect(result).not.toBeNull();
+    expect(result!.entry.version).toBe(1);
+    expect(result!.entry.title).toBe('Test Crystal');
   });
 
   it('writes separate files for different versions', async () => {
@@ -156,5 +165,15 @@ describe('writeCrystal', () => {
     const dir = path.join(TEST_HOME, '.aetherlink', 'crystals');
     const files = (await fs.readdir(dir)).sort();
     expect(files).toEqual(['crystal_1.json', 'crystal_2.json']);
+  });
+
+  it('returns null when all retry slots are occupied', async () => {
+    const dir = path.join(TEST_HOME, '.aetherlink', 'crystals');
+    await fs.mkdir(dir, { recursive: true });
+    for (let i = 1; i <= 5; i++) {
+      await fs.writeFile(path.join(dir, `crystal_${i}.json`), '{}');
+    }
+    const result = await writeCrystal(makeCrystal(1));
+    expect(result).toBeNull();
   });
 });

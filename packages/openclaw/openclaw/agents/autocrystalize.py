@@ -30,6 +30,7 @@ import anthropic
 from ..memory import (
     CrystalEntry,
     DreamEntry,
+    clear_dreams,
     next_crystal_version,
     read_dreams,
     write_crystal,
@@ -73,7 +74,9 @@ class AutoCrystalizeAgent(AutoDreamAgent):
         super().reset()  # calls dream() then clears history
         dreams = read_dreams()
         if len(dreams) >= self.AUTO_CRYSTALIZE_THRESHOLD:
-            self.crystalize()
+            result = self.crystalize()
+            if result is not None:
+                clear_dreams()
 
     def crystalize(self) -> CrystalEntry | None:
         """Distill all stored dreams into a new versioned CrystalEntry.
@@ -116,7 +119,10 @@ class AutoCrystalizeAgent(AutoDreamAgent):
             key_facts=parsed.get("key_facts", []),
             source_dream_ids=[d.id for d in dreams],
         )
-        write_crystal(entry)
+        path = write_crystal(entry)
+        if path is None:
+            logger.warning("[autocrystalize] Crystal could not be persisted.")
+            return None
         logger.info(
             "[autocrystalize] Crystal v%d written: %s", entry.version, entry.title
         )

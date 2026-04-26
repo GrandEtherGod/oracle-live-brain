@@ -151,14 +151,16 @@ class TestWriteCrystal:
     def test_creates_file(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(mem, "_crystals_dir", lambda: tmp_path)
         entry = _make_crystal(version=1)
-        path = write_crystal(entry)
-        assert path.exists()
+        result = write_crystal(entry)
+        assert result is not None
+        assert result.exists()
 
     def test_file_contains_valid_json(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(mem, "_crystals_dir", lambda: tmp_path)
         entry = _make_crystal(version=1)
-        path = write_crystal(entry)
-        data = json.loads(path.read_text())
+        result = write_crystal(entry)
+        assert result is not None
+        data = json.loads(result.read_text())
         assert data["title"] == "Test Crystal"
         assert data["version"] == 1
 
@@ -170,3 +172,10 @@ class TestWriteCrystal:
         assert len(files) == 2
         assert files[0].name == "crystal_1.json"
         assert files[1].name == "crystal_2.json"
+
+    def test_returns_none_when_all_slots_occupied(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(mem, "_crystals_dir", lambda: tmp_path)
+        for i in range(1, 6):
+            (tmp_path / f"crystal_{i}.json").write_text("{}")
+        result = write_crystal(_make_crystal(version=1))
+        assert result is None

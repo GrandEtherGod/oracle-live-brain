@@ -171,7 +171,7 @@ Reads accumulated `DreamEntry` records and distills them into a versioned, perma
 
 ### Data flow
 
-```
+```text
 Session ends (WebSocket close / agent.reset())
     │
     ▼

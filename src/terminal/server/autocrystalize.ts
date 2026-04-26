@@ -82,10 +82,10 @@ export async function runAutoCrystalize(minDreams: number = 1): Promise<CrystalE
     source_dream_ids: dreams.map((d: DreamEntry) => d.id),
   };
 
-  const filePath = await writeCrystal(entry);
-  if (!filePath) {
+  const result = await writeCrystal(entry);
+  if (!result) {
     console.warn('[autocrystalize] Crystal could not be persisted; skipping.');
     return null;
   }
-  return entry;
+  return result.entry;
 }
