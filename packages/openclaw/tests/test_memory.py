@@ -153,16 +153,19 @@ class TestWriteCrystal:
         entry = _make_crystal(version=1)
         result = write_crystal(entry)
         assert result is not None
-        assert result.exists()
+        path, _ = result
+        assert path.exists()
 
     def test_file_contains_valid_json(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(mem, "_crystals_dir", lambda: tmp_path)
         entry = _make_crystal(version=1)
         result = write_crystal(entry)
         assert result is not None
-        data = json.loads(result.read_text())
+        path, persisted = result
+        data = json.loads(path.read_text())
         assert data["title"] == "Test Crystal"
         assert data["version"] == 1
+        assert persisted.version == 1
 
     def test_version_increments_correctly(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(mem, "_crystals_dir", lambda: tmp_path)

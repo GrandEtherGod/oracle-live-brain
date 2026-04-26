@@ -110,20 +110,31 @@ class AutoCrystalizeAgent(AutoDreamAgent):
             logger.warning("[autocrystalize] Crystalization failed: %s", exc)
             return None
 
+        if (
+            not isinstance(parsed, dict)
+            or not isinstance(parsed.get("title"), str)
+            or not isinstance(parsed.get("content"), str)
+            or not isinstance(parsed.get("key_facts"), list)
+            or not all(isinstance(f, str) for f in parsed.get("key_facts", []))
+        ):
+            logger.warning("[autocrystalize] Claude returned an unexpected shape: %s", parsed)
+            return None
+
         version = next_crystal_version()
         entry = CrystalEntry(
             version=version,
             timestamp=datetime.now(timezone.utc).isoformat(),
-            title=parsed.get("title", ""),
-            content=parsed.get("content", ""),
-            key_facts=parsed.get("key_facts", []),
+            title=parsed["title"],
+            content=parsed["content"],
+            key_facts=parsed["key_facts"],
             source_dream_ids=[d.id for d in dreams],
         )
-        path = write_crystal(entry)
-        if path is None:
+        result = write_crystal(entry)
+        if result is None:
             logger.warning("[autocrystalize] Crystal could not be persisted.")
             return None
+        _, persisted = result
         logger.info(
-            "[autocrystalize] Crystal v%d written: %s", entry.version, entry.title
+            "[autocrystalize] Crystal v%d written: %s", persisted.version, persisted.title
         )
-        return entry
+        return persisted

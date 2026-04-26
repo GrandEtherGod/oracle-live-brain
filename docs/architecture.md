@@ -93,14 +93,14 @@ packages/openclaw/
 
 ### Persistent memory storage
 
-`AutoDreamAgent` and `AutoCrystalizeAgent` write to `~/.aetherlinkos/`:
+`AutoDreamAgent` and `AutoCrystalizeAgent` write to `~/.openclaw/`:
 
 | Path | Contents |
 |------|----------|
-| `~/.aetherlinkos/autodream/<session_id>.json` | Session conversation history + stored notes |
-| `~/.aetherlinkos/crystals/<uuid>.json` | Crystallized facts (summary, facts list, tags) |
+| `~/.openclaw/dreams/dreams.jsonl` | Append-only dream log (one JSON record per line) |
+| `~/.openclaw/crystals/crystal_<n>.json` | Versioned knowledge artifacts |
 
-The `memory.py` module owns all filesystem I/O for both agents.  Session history is loaded on agent construction and saved after every `run()` call (even on exception).  Crystals are written by the `crystallize` tool via a scoped, non-tool-loop Claude API call that returns structured JSON.
+The `memory.py` module owns all filesystem I/O for both agents.  A `DreamEntry` is appended after each session ends.  Crystals are written by `AutoCrystalizeAgent.crystalize()` via a scoped Claude API call that distils all stored dreams into a versioned `CrystalEntry`.
 
 ### Agent architecture
 

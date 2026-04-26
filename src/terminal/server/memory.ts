@@ -55,11 +55,12 @@ async function ensureDir(dirPath: string): Promise<void> {
 
 export async function appendDream(entry: DreamEntry): Promise<void> {
   const filePath = dreamsFilePath();
+  await ensureDir(path.dirname(filePath));
   try {
-    await ensureDir(path.dirname(filePath));
     await fs.appendFile(filePath, JSON.stringify(entry) + '\n', 'utf-8');
   } catch (err) {
     console.warn('[autodream] Failed to write dream entry:', err);
+    throw err;
   }
 }
 
