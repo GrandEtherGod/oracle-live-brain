@@ -1,0 +1,28 @@
+# Render Blueprint for this service only.
+# In the Render dashboard, set the service Root Directory to oracle-live-brain
+# (or point a Blueprint at this file). A persistent disk keeps live turns
+# across restarts; the free instance type has an ephemeral disk and will
+# reseed the 144 simulated conversations after every deploy.
+services:
+  - type: web
+    name: oracle-live-brain
+    runtime: node
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ORACLE_INGEST_TOKEN
+        sync: false
+      - key: ORACLE_DATA_PATH
+        value: /var/data/state.json
+      - key: ORACLE_LLM_API_KEY
+        sync: false
+      - key: ORACLE_LLM_MODEL
+        value: claude-3-5-haiku-20241022
+    disk:
+      name: oracle-brain-data
+      mountPath: /var/data
+      sizeGB: 1

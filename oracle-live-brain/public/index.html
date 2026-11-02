@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Oracle Live Brain</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='5.2' fill='none' stroke='%23e4b15a' stroke-width='1.4'/%3E%3Ccircle cx='8' cy='8' r='1.6' fill='%23e4b15a'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <p class="eyebrow">Axius · Oracle</p>
+      <h1>Live Brain</h1>
+    </div>
+    <div id="status" class="status" data-state="connecting" role="status" aria-live="polite">
+      <span class="dot" aria-hidden="true"></span>
+      <span class="label">Connecting</span>
+      <span class="detail" id="status-detail">Opening the live stream</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero" aria-label="Brain">
+      <div class="frame">
+        <canvas id="brain" width="1100" height="640"></canvas>
+        <div class="overlay">
+          <p id="phase" data-phase="idle">At rest</p>
+          <p id="banner"></p>
+          <button type="button" id="replay" disabled>Replay last echo</button>
+        </div>
+      </div>
+      <p class="legend">Gold is the live signal. Grey pathways are at rest. A colored ring on a neuron is the agent that grew it.</p>
+    </section>
+
+    <section class="counters" aria-label="Counters">
+      <article><p class="num" id="count-conversations">—</p><h2>Conversations</h2></article>
+      <article><p class="num" id="count-liveTurns">—</p><h2>Live turns recorded</h2></article>
+      <article><p class="num" id="count-neurons">—</p><h2>Neurons</h2></article>
+      <article><p class="num" id="count-pathways">—</p><h2>Pathways</h2></article>
+      <article><p class="num" id="count-pathwaysStrengthenedByEcho">—</p><h2>Pathways strengthened by echo</h2></article>
+    </section>
+
+    <p id="pending" class="pending" hidden></p>
+
+    <section class="panel talk" aria-labelledby="talk-title">
+      <div class="panel-head">
+        <h2 id="talk-title">Talk to the brain</h2>
+        <label class="speak"><input type="checkbox" id="speak" checked /> Speak replies</label>
+      </div>
+      <p class="lede">It answers from its own live counts. Each sentence lights the region it draws on. Your words are not stored.</p>
+      <div id="dialogue" class="dialogue" aria-live="polite"></div>
+      <form id="talk-form">
+        <label class="sr" for="ask">Message</label>
+        <textarea id="ask" rows="2" maxlength="500" placeholder="Ask how the brain is growing" required></textarea>
+        <button type="submit" id="ask-btn">Ask</button>
+      </form>
+      <p id="impressions" class="quiet">Words you type are not kept. Only a faculty and a time.</p>
+    </section>
+
+    <section class="panel" aria-labelledby="timeline-title">
+      <div class="panel-head">
+        <h2 id="timeline-title">Timeline</h2>
+        <p class="quiet">One tick per conversation. Short grey ticks are simulated history. Tall gold ticks are real turns. Arcs are the latest turn reaching back.</p>
+      </div>
+      <div id="timeline-scroll" class="timeline-scroll">
+        <svg id="timeline-svg" role="img" aria-label="Conversation timeline"></svg>
+      </div>
+    </section>
+
+    <div class="split">
+      <section class="panel" aria-labelledby="growth-title">
+        <div class="panel-head">
+          <h2 id="growth-title">Growth of the network</h2>
+          <p class="quiet">Neurons and pathways after each conversation, by developmental stage.</p>
+        </div>
+        <canvas id="growth" height="280"></canvas>
+        <p class="chart-key"><span class="key-bone">Neurons</span><span class="key-gold">Pathways</span></p>
+        <div id="stages" class="stages"></div>
+      </section>
+      <section class="panel" aria-labelledby="fired-title">
+        <div class="panel-head">
+          <h2 id="fired-title">What each conversation fired</h2>
+          <p class="quiet">Pathways activated per conversation, split into between-region and within-one-region.</p>
+        </div>
+        <canvas id="fired" height="280"></canvas>
+        <p class="chart-key"><span class="key-dim">Within one region</span><span class="key-gold">Between regions</span></p>
+      </section>
+    </div>
+
+    <section class="panel" aria-labelledby="regions-title">
+      <div class="panel-head">
+        <h2 id="regions-title">Regions of the mind</h2>
+        <p class="quiet">A metaphor mapped onto familiar brain areas, not a medical diagram.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Region</th>
+              <th>Where in the brain</th>
+              <th>Neurons</th>
+              <th>Internal pathways</th>
+              <th>Bridges</th>
+              <th>Activations</th>
+            </tr>
+          </thead>
+          <tbody id="region-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="recent-title">
+      <div class="panel-head">
+        <h2 id="recent-title">Recent live turns</h2>
+        <p class="quiet">Faculty, size, agent, and time. The words are never here.</p>
+      </div>
+      <ul id="recent" class="recent"></ul>
+    </section>
+
+    <section class="panel howto" aria-labelledby="howto-title">
+      <h2 id="howto-title">How to read it</h2>
+      <div class="cards">
+        <article>
+          <h3>Anticipation</h3>
+          <p>When a turn starts, the pathways that faculty is likely to use glow gold, before anything fires.</p>
+        </article>
+        <article>
+          <h3>Confirmation</h3>
+          <p>When the turn finishes, the pathways that fired flash, and the rest fall quiet.</p>
+        </article>
+        <article>
+          <h3>Echo</h3>
+          <p>The finished turn sends gold pulses back into older pathways and strengthens them. It is a picture of influence. Nothing in the record moves backward in time.</p>
+        </article>
+        <article>
+          <h3>Voice</h3>
+          <p>Replies come from a model that is given the brain’s real numbers, then spoken with the browser voice. With no key set, a fixed template speaks those same numbers.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Oracle Live Brain · live turns carry an agent, a faculty, a size, and a time.</p>
+  </footer>
+  <noscript><p class="noscript">This page needs JavaScript to open the live brain.</p></noscript>
+  <script src="/app.js"></script>
+</body>
+</html>

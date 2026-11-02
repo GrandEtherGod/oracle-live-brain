@@ -209,6 +209,30 @@ openclaw chat --agent autocrystalize   # reflects + crystallizes when threshold 
 
 ---
 
+## Oracle Live Brain (`oracle-live-brain/`)
+
+A standalone Node service, kept out of `src/` so the voice terminal and Theia build stay untouched. It is the live picture of agent turns: regions, neurons, pathways, and a WebSocket the browser paints from.
+
+```text
+Agent (curl or post-turn.mjs)
+    │  POST /api/turns/start     anticipation, no counter change
+    │  POST /api/turns/end       confirmation, growth, echo
+    ▼
+Express + WebSocket  (oracle-live-brain/src/server.ts)
+    │  JSON file at ORACLE_DATA_PATH
+    │  first 144 conversations are a deterministic simulated seed
+    ▼
+Browser  (oracle-live-brain/public/)
+    GET /api/state paints immediately
+    WS /live pushes hello, anticipation, confirmation, echo
+```
+
+Ingest accepts only `agent`, `faculty`, `size`, an optional `timestamp`, and an optional `turnId`. Message content is rejected and never logged. Talk-to-the-brain may read a question in memory to phrase a reply; the stored impression is the faculty and the time.
+
+The page does not wait on the socket to show numbers. HTTP state is uncached, the socket sends a full snapshot on connect, and a dropped socket reconnects while HTTP polling keeps the counters moving.
+
+---
+
 ## Key Design Decisions
 
 | Decision | Rationale |

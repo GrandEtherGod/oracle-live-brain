@@ -9,6 +9,7 @@ An AI-native operating platform by **AxiusEnterprises**, built on [Eclipse Theia
 - **AI-native IDE** — Eclipse Theia core with deep Claude AI integration
 - **Voice Terminal** — Full-stack live voice terminal (speech-to-text input, text-to-speech output, Claude AI command processing)
 - **Agent Layer** — Pluggable AI agents for code generation, review, and automation
+- **Oracle Live Brain** — A live map of agent turns (faculty, size, and time only). See [oracle-live-brain/README.md](oracle-live-brain/README.md)
 - **Cloud-Ready** — Designed for Claude Code on the web; SessionStart hook installs all dependencies automatically
 
 ---
